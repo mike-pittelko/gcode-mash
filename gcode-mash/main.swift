@@ -12,9 +12,6 @@ import Foundation
 
 
 
-
-
-
 let cli = CommandLine()
 
 let filePath = StringOption(shortFlag: "f", longFlag: "file", required: true,
@@ -176,7 +173,7 @@ func OpenFileAndProcess(file: String)
           
                if (verbose.value == 3)
                {
-                    print( "S: \(n.SourceBlock)  R: \(n.PBlock)  Layer: \(n.Layer)")
+                    DumpABlock(n)
                }
                else
                {
@@ -189,8 +186,7 @@ func OpenFileAndProcess(file: String)
                {
                     if (verbose.value == 3)
                     {
-                         print( "S: \(n.SourceBlock)  R: \(n.PBlock)  L:\(n.Layer) " )
-                         print( "--->CP:(\(n.currentPositionA),\(n.currentPositionB),\(n.currentPositionC),\(n.currentPositionX),\(n.currentPositionY),\(n.currentPositionZ)) LL:\(n.PositionLastLinear) LR:\(n.PositionLastRapid)")
+                         DumpABlock(n)
                     }
                     else
                     {
@@ -210,5 +206,4 @@ func OpenFileAndProcess(file: String)
 var TheName: String = ""
 
 OpenFileAndProcess(filePath.value!)
-
 
