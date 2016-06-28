@@ -1763,7 +1763,7 @@ class  GCODEParser
           var workingBlock: String = BlockToParse
           
           
-          workingBlock = workingBlock.capitalizedString   // convert any lower case to upper
+          workingBlock = workingBlock.capitalizedString   // convert any lower case to upper (this is hell on comments..but I'm a little lazy)
           
           // There may be more than one space between words, so take them all out, they're easy(ish) to put back in.
           // If we leave the multiples in, the tokenizer will split the spaces into "empty" tokens, which is
@@ -1779,6 +1779,11 @@ class  GCODEParser
           {
                workingBlock = workingBlock.stringByReplacingOccurrencesOfString("\(ch)", withString: " \(ch)" )  // replace letters with space+letter.
           }
+ 
+/*          var components: Array<String>   // This will hold each of the words in the block
+           components = workingBlock.componentsSeparatedByCharactersInSet(NSCharacterSet.letterCharacterSet())  // That doesn't work
+           
+*/
           
           // workingBlock (one line) now has all caps, with each word separated by a space
           
@@ -1786,6 +1791,7 @@ class  GCODEParser
           
           components = workingBlock.componentsSeparatedByString(" ")  // ok, now we're all tokenized, all spaces stripped
           
+
           // components is an array of substrings, each one is one gcode command word
           var isCommentBlock = false  // Haven't hit a comment yet. It's a special case.
           

@@ -62,7 +62,7 @@ func OpenFileAndProcess(file: String)
      
      if (versionoption.wasSet && versionoption.value == true)
      {
-          print("Version 0.2")
+          print("Version 0.3")
           exit(0)
      }
      
@@ -131,7 +131,10 @@ func OpenFileAndProcess(file: String)
                
                count = count + 1
           }
-     } catch {(print("something bad happened. good luck with that."))}
+     } catch {
+          print("something bad happened. good luck with that.")
+          exit(1)
+     }
      
      count = 0
      
@@ -168,9 +171,16 @@ func OpenFileAndProcess(file: String)
           //print( n.OutputString.stringByReplacingOccurrencesOfString(" ", withString: "" ) ) // strip out all the spaces while we're at it.
           //print( n.OutputString)
 
-          if ((trimoption.wasSet) && (count < trimoption.value))
+          if (trimoption.wasSet)
           {
-          
+               if (count < trimoption.value)
+               {
+                    print( "\(n.PBlock)")
+               }
+               
+          }
+          else  // Not trimming
+          {
                if (verbose.value == 3)
                {
                     DumpABlock(n)
@@ -179,21 +189,7 @@ func OpenFileAndProcess(file: String)
                {
                     print( "\(n.PBlock)")
                }
-          }
-          else
-          {
-               if (trimoption.wasSet == false)
-               {
-                    if (verbose.value == 3)
-                    {
-                         DumpABlock(n)
-                    }
-                    else
-                    {
-                         print( "\(n.PBlock)")
-                    }
-               }
-  
+               
           }
           
      }
