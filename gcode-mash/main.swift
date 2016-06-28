@@ -189,7 +189,7 @@ func OpenFileAndProcess(file: String)
                {
                     if (verbose.value == 3)
                     {
-                         print( "S: \(n.SourceBlock)  R: \(n.PBlock)  Layer: \(n.Layer)")
+                         print( "S: \(n.SourceBlock)  R: \(n.PBlock)  L:\(n.Layer) LL:\(n.PositionLastLinear) LR:\(n.PositionLastRapid)")
                     }
                     else
                     {

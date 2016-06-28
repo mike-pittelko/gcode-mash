@@ -407,6 +407,9 @@ class  GCODEParser
      var SourceBlock: String = ""
      var ZFeedOverride: Double = 0
      
+     var PositionLastRapid: (A: Double,B: Double,C: Double,X: Double,Y: Double,Z: Double) = (0,0,0,0,0,0)    // A,B,C,X,Y,Z
+     var PositionLastLinear: (A: Double,B: Double,C: Double,X: Double,Y: Double,Z: Double) = (0,0,0,0,0,0)   // A,B,C,X,Y,Z
+     
      // Constants
      let ReferencePlane = 0.0    // Z<=Referenceplane = last move inside this segment.
      
@@ -492,6 +495,8 @@ class  GCODEParser
           SuppressRedundantMotionMode = false
           OptEnabled = true
           ZFeedOverride = 0
+          PositionLastRapid = (0,0,0,0,0,0)
+          PositionLastLinear = (0,0,0,0,0,0)
           
           SettingDwell = false
           Dwelling = false
@@ -529,111 +534,15 @@ class  GCODEParser
           OptEnabled = opt
           
           SourceBlock = Block
-          PreviousNode = last
-          AbsolutePositioningMode = last.AbsolutePositioningMode
-          PathControlMode = last.PathControlMode
-          CoordinateSystemMode = last.CoordinateSystemMode
-          LastMovementWas = last.LastMovementWas
-          MotionMode = last.MotionMode
-          FeedOverrideMode = last.FeedOverrideMode
-          CoolantMode = last.CoolantMode
-          ToolChangeMode = last.ToolChangeMode
-          SpindleMode = last.SpindleMode
-          StoppingMode = last.StoppingMode
-          PlaneSelectionMode = last.PlaneSelectionMode
-          DistanceMode = last.DistanceMode
-          FeedRateMode = last.FeedRateMode
-          UnitMode = last.UnitMode
-          CutterRadiusCompensationMode = last.CutterRadiusCompensationMode
-          ToolLengthOffsetMode = last.ToolLengthOffsetMode
-          ReturnModeCannedCycleMode = last.ReturnModeCannedCycleMode
-          X = last.X
-          Y = last.Y
-          Z = last.Z
-          A = last.A
-          B = last.B
-          C = last.C
-          F = last.F
-          S = last.S
-          R = last.R
-          I = last.I
-          J = last.J
-          N = last.N
-          T = last.T
-          P = last.P
-          L = last.L
-          D = last.D
-          H = last.H
-          K = last.K
-          Q = last.Q
-          lastLinearA = last.lastLinearA
-          lastLinearB = last.lastLinearB
-          lastLinearC = last.lastLinearA
-          lastLinearX = last.lastLinearX
-          lastLinearY = last.lastLinearY
-          lastLinearZ = last.lastLinearZ
-          lastRapidA = last.lastRapidA
-          lastRapidB = last.lastRapidB
-          lastRapidC = last.lastRapidC
-          lastRapidX = last.lastRapidX
-          lastRapidY = last.lastRapidY
-          lastRapidZ = last.lastRapidZ
-          lastXYFeed = last.lastXYFeed
-          lastZFeed = last.lastZFeed
-          currentPositionA = last.currentPositionA
-          currentPositionB = last.currentPositionB
-          currentPositionC = last.currentPositionC
-          currentPositionX = last.currentPositionX
-          currentPositionY = last.currentPositionY
-          currentPositionZ = last.currentPositionZ
-          CoordinateSystemA = last.CoordinateSystemA
-          CoordinateSystemB = last.CoordinateSystemB
-          CoordinateSystemC = last.CoordinateSystemC
-          CoordinateSystemX = last.CoordinateSystemX
-          CoordinateSystemY = last.CoordinateSystemY
-          CoordinateSystemZ = last.CoordinateSystemZ
-          AxisOffsetValuesA = last.AxisOffsetValuesA
-          AxisOffsetValuesB = last.AxisOffsetValuesB
-          AxisOffsetValuesC = last.AxisOffsetValuesC
-          AxisOffsetValuesX = last.AxisOffsetValuesX
-          AxisOffsetValuesY = last.AxisOffsetValuesY
-          AxisOffsetValuesZ = last.AxisOffsetValuesZ
-          
-          SettingDwell = false
-          Dwelling = last.Dwelling
-          ParameterFileOffsetsBeingSet = false
-          ParameterFile = last.ParameterFile
-          NeedFeedRate = false
-          SettingCoordinateSystem = 0
-          FatalError = .None
-          BlockDeleteSwitch = last.BlockDeleteSwitch
-          AtOrAboveReference = false;
-          TransitionedAboveReferencePlane = false
-          SegmentNumber = last.SegmentNumberNext
-          Layer = last.NextLayer
-          NextLayer = Layer
-          TransitionedToNextLayer = false
-          DeepestCutSoFar = last.DeepestCutSoFar
-          Annotate = last.Annotate
-          OptimizeRetracts = last.OptimizeRetracts
-          OptimizeSegmentLocality = last.OptimizeSegmentLocality
-          SuppressRedundantMotionMode = last.SuppressRedundantMotionMode
-          UnitString = last.UnitString
-          ZFeedOverride = last.ZFeedOverride
-          
-          NextStrings.removeAll()
+          copyFromLast(last)
           
           ParseGCodeBlock(SourceBlock)
 
           
      }
 
-     convenience init(last: GCODEParser , Block: String)
+     func copyFromLast(last: GCODEParser)
      {
-          
-          self.init()
-          OptEnabled = true
-          SourceBlock = Block
           PreviousNode = last
           AbsolutePositioningMode = last.AbsolutePositioningMode
           PathControlMode = last.PathControlMode
@@ -725,8 +634,19 @@ class  GCODEParser
           SuppressRedundantMotionMode = last.SuppressRedundantMotionMode
           UnitString = last.UnitString
           ZFeedOverride = last.ZFeedOverride
+          PositionLastRapid = last.PositionLastRapid
+          PositionLastLinear = last.PositionLastLinear
           
           NextStrings.removeAll()
+          
+     }
+     convenience init(last: GCODEParser , Block: String)
+     {
+          
+          self.init()
+          OptEnabled = true
+          SourceBlock = Block
+          copyFromLast(last)
           
           ParseGCodeBlock(SourceBlock)
           
@@ -850,6 +770,7 @@ class  GCODEParser
                else{
                     currentPositionA = currentPositionA + value;
                }
+               PositionLastRapid = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                
                break
           case MotionModalGroup.G1 : // Linear
@@ -862,6 +783,7 @@ class  GCODEParser
                     currentPositionA = currentPositionA + value;
                }
                break
+               PositionLastLinear = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                
           default:
                Errors = Errors + "No motion mode, with A word\n"
@@ -899,6 +821,7 @@ class  GCODEParser
                else{
                     currentPositionB = currentPositionA + value;
                }
+               PositionLastRapid = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                
                break
           case MotionModalGroup.G1 : // Linear
@@ -910,6 +833,7 @@ class  GCODEParser
                else{
                     currentPositionB = currentPositionB + value;
                }
+               PositionLastLinear = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                
                break
                
@@ -953,6 +877,7 @@ class  GCODEParser
                else{
                     currentPositionC = currentPositionC + value;
                }
+               PositionLastRapid = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                
                break
           case MotionModalGroup.G1 : // Linear
@@ -964,7 +889,8 @@ class  GCODEParser
                else{
                     currentPositionC = currentPositionC + value;
                }
-               
+               PositionLastLinear = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
+              
                break
                
           default:
@@ -1513,7 +1439,8 @@ class  GCODEParser
                else{
                     currentPositionX = currentPositionX + value;
                }
-               
+               PositionLastRapid = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
+              
                break
           case MotionModalGroup.G1 : // Linear
                
@@ -1531,6 +1458,7 @@ class  GCODEParser
                     currentPositionX = currentPositionX + value;
                }
                lastXYFeed = F;
+               PositionLastLinear = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                break
                
           default:
@@ -1587,6 +1515,7 @@ class  GCODEParser
                else{
                     currentPositionY = currentPositionY + value;
                }
+               PositionLastRapid = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                
                break
           case MotionModalGroup.G1 : // Linear
@@ -1605,6 +1534,7 @@ class  GCODEParser
                     currentPositionY = currentPositionY + value;
                }
                lastXYFeed = F;
+               PositionLastLinear = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                break
                
           default:
@@ -1675,6 +1605,7 @@ class  GCODEParser
                     Layer = Layer + 1
                     NextLayer = Layer
                }
+               PositionLastRapid = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
                
                
                break
@@ -1761,6 +1692,8 @@ class  GCODEParser
                     DeepestCutSoFar = currentPositionZ
                     NextLayer = Layer + 1
                }
+
+               PositionLastLinear = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
 
                break
                
@@ -1856,7 +1789,7 @@ class  GCODEParser
                          case "G":  // G code - workhorse
                               if GCode_Gx(ExtractDoubleValue(word)) { OutputString = OutputString  + word + " "}
                               break
-                         case "M":  // M code (usually states)
+                         case "M":  // M code (misc)
                               if GCode_Mx(ExtractDoubleValue(word)) { OutputString = OutputString  + word + " "}
                               break
                          case "L": // Repeat line (canned cycle?) TODO
@@ -1969,11 +1902,15 @@ class  GCODEParser
           
           if (Annotate)
           {
-               OutputString = OutputString + "  (------------------Seg:\(SegmentNumber) dZ=\(DeepestCutSoFar) Lyr=\(Layer) )"
+               OutputString = OutputString + "  (--------Seg:\(SegmentNumber) dZ=\(DeepestCutSoFar) Lyr=\(Layer) LL:\(PositionLastLinear) LR:\(PositionLastRapid))"
           }
           
           // lets try and regenerate the block
           //
+          if (InBlock.N) // Line numbers always first
+          {
+               PBlock = PBlock + "N\(N)"
+          }
           for token in InBlock.M
           {
                PBlock = PBlock + String.localizedStringWithFormat("M%G ", token)
@@ -2021,10 +1958,6 @@ class  GCODEParser
           if (InBlock.L)
           {
                PBlock = PBlock + "L\(L)"
-          }
-          if (InBlock.N)
-          {
-               PBlock = PBlock + "N\(N)"
           }
           if (InBlock.P)
           {
