@@ -55,7 +55,29 @@ import Foundation
 //
 // Stuff to know:
 //  alternate coordinate systems and offsets are not implemented.  This is will cause problems with more complex gcode files.
+/*
 
+// get Float or Double with 2 significant figure precision
+var numberFormatter = NSNumberFormatter()
+extension Float {
+     var sf3:String {
+          get {
+               numberFormatter.numberStyle = NSNumberFormatterStyle.DecimalStyle
+               numberFormatter.maximumSignificantDigits = 3
+               return numberFormatter.stringFromNumber(self)!
+          }
+     }
+}
+extension Double {
+     var sf3:String {
+          get {
+               numberFormatter.numberStyle = NSNumberFormatterStyle.DecimalStyle
+               numberFormatter.maximumSignificantDigits = 3
+               return numberFormatter.stringFromNumber(self)!
+          }
+     }
+}
+*/
 
 class CmdsInBlock
 {
@@ -782,8 +804,8 @@ class  GCODEParser
                else{
                     currentPositionA = currentPositionA + value;
                }
-               break
                PositionLastLinear = (currentPositionA, currentPositionB, currentPositionC, currentPositionX, currentPositionY, currentPositionZ)
+               break
                
           default:
                Errors = Errors + "No motion mode, with A word\n"
