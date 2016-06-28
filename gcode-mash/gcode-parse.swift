@@ -10,47 +10,123 @@ import Foundation
 
 
 // Optimizations
-//    1)  Redundant sets to G0, G1 motion modes are suppressed
+//    1)  Redundant sets to G0, G1 motion modes are suppressed (SuppressRedundantMotionMode=true)
 //          if in G0, and G0 received, does not re-emit the G0 in outputString
 //          if in G1, and G1 received, does not re-emit the G1 in outputString
 //    2)  TODO: Using least distance, reorder the sements in a layer to reduce the rapid distance.  (works in XYZ)
 //              First, find the last currentxyz in the segment.
 //              Second, find the first currentxy in all the other segments
 //              third, select the segment that has the closest start currentxyz. This is the next segment.
-//              When you run out of segments in the layer, use the first segment of the next layer as the next segment.
+//              When you run out of segments in the layer, use the closest segment of the next layer as the next segment.
 //              Layer depends on Z, so if this is a carve with varying Z in a given "layer" this probably won't work right.
-//    3)  TODO: Optimize retraction performance
+//    3)  Optimize retraction performance  OptimizeRetract=true
 //              First, find each retract.
 //              Second, for each retract, find the next plunge
 //              Third, If the plunge is deeper than the deepest plunge so far, convert the plunge to be a rapid
 //                   to just above the deepest cut so far, then linear to the original depth.
 //    4)  TODO: Optimize redundant plunges -- works with XYZ, not 4+ axis.
-//              First, find each tract.
+//              First, find each retract.
 //              Second, find the next plunge
 //              Third, If the plunge (xy) is occurring at the location of the last retract (xy), remove the retract. Convert
 //                     the plunge to be a linear to the new depth.
+//    5)  If in absolute positioning mode, and X or Y to current X or Y, (G0 or G1) do not emit. This can result in a 
+//         G1 followed immediately by a G0 with no movement between. This does no harm, but would be nice to fix.
 
 //
 // Other manipulations
-//    1)  If a fatal error is found in a block will flag block with "*" and set FatalError != .None
+//    1)  If a fatal error is found in a block will flag block FatalError != .None
 //    2)  Warnings and Error text will be in Errors string
 //    3)
 //
 // Drop Block Switch is implemented (/).  Any block that has a "/" character at the begining of the line, and the "Switch"
-//   is on, will not be executed (it will not manipulate the machine state) but will be output.
+//   is on, will not be executed (it will not manipulate the machine state) but will be output <and not processed by
+//   any rules/optimizations/filtering>
 // Misc notes:
 //   Retraction above or to the "ReferencePlane" marks the end of a given "segment". Defaults to zero, which is assumed
 //      to be the top surface of the stock. If it is not, set the reference plane appropriately.
 //   Each segment is assumed to be reorderable for a given depth.
-//   Each "layer" is the collection of sements at the same depth
-//   Annotation: Enables layer, deepest cut, segment display on each output line.  Not that if you do this, the output text
-//               is not rerunnable.
+//   Each "layer" is the collection of segments at the same depth
+//   Annotation: Enables layer, deepest cut, segment display on each output line.  Annotations are put into a comment, but....that might not be good enough.
 //
-// If you reorder the words, such that the "last's" are no longer accurate, I strongly recommend that you then rerun the whole
-// job, running the "outputstrings" through the parser and generating a whole new set of nodes.
+// If you reorder the words, which makes the "last's" no longer accurate, I strongly recommend that you then rerun the whole
+// job, running the "pblock" through the parser and generating a whole new set of nodes.
+// 
+// I don't know what will happen if you have line numbers and reorder. It's probably very, very bad.
 //
+// Stuff to know:
+//  alternate coordinate systems and offsets are not implemented.  This is will cause problems with more complex gcode files.
 
 
+class CmdsInBlock
+{
+     var X: Bool = false // x pos
+     var Y: Bool = false  // y pos
+     var Z: Bool = false  // z pos
+     var A: Bool = false  // a pos
+     var B: Bool = false  // b pos
+     var C: Bool = false  // c pos
+     var F: Bool = false  // feed rate
+     var S: Bool = false  // spindle rate
+     var R: Bool = false  // Position of retract plane
+     var I: Bool = false  // Parameters for arcs
+     var J: Bool = false  // Parameters for arcs
+     var N: Bool = false   // line number
+     var T: Bool = false   // tool number
+     var P: Bool = false        // Pause/dwell time
+     var L: Bool = false        // repeat block count
+     var D: Bool = false
+     var H: Bool = false
+     var K: Bool = false
+     var Q: Bool = false
+     var M: Array <Double> = []
+     var G: Array <Double> = []
+     var Comment: Array <String> = []
+     var DebugFlag: Bool = false
+     var DebugString: String = ""
+     var OnlyZ: Bool = false
+
+     
+     
+     init()
+     {
+          A = false
+          B = false
+          C = false
+          D = false
+          F = false
+          H = false
+          I = false
+          J = false
+          L = false
+          N = false
+          P = false
+          Q = false
+          R = false
+          S = false
+          T = false
+          X = false
+          Y = false
+          Z = false
+          M.removeAll()
+          G.removeAll()
+          Comment.removeAll()
+          DebugFlag = false
+          DebugString = ""
+          OnlyZ = false         // Used for finding Z plunges
+
+     }
+     
+     func AddM(value: Double)
+     {
+          M.append(value)
+     }
+
+     func AddG(value: Double)
+     {
+          G.append(value)
+     }
+
+}
 
 
 
@@ -103,8 +179,8 @@ class  GCODEParser
      enum FeedRateModalGroup
      {
           case None
-          case G93
-          case G94
+          case G93     // Absolute
+          case G94     // Relative
      }
      enum UnitModalGroup
      {
@@ -221,6 +297,8 @@ class  GCODEParser
      
      let commandletters: String = "ABCDFGHIJKLMNPQRSTXYZ"
      let allletters: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+     let ZPlungeGapMM: Double = (25/4)
+     let ZPlungeGapInch: Double = 0.25
      
      var FatalError: FatalErrorType = .None
      var X: Double = 0.0 // x pos
@@ -230,14 +308,19 @@ class  GCODEParser
      var B: Double = 0.0 // b pos
      var C: Double = 0.0 // c pos
      var F: Double = 0.0 // feed rate
-     var S: Double = 0.0 // spindle rate
+     var S: Int = 0 // spindle rate
      var R: Double = 0.0 // Position of retract plane
      var I: Double = 0.0 // Parameters for arcs
      var J: Double = 0.0 // Parameters for arcs
      var N: Double = 0.0  // line number
-     var T: Double = 0.0  // tool number
+     var T: Int = 0  // tool number
      var P: Int = 0       // Pause/dwell time
      var L: Int = 0       // repeat block count
+     var D: Double = 0.0
+     var H: Double = 0.0
+     var K: Double = 0.0
+     var Q: Double = 0.0
+     
      var lastLinearX = 0.0
      var lastLinearY = 0.0
      var lastLinearZ = 0.0
@@ -250,6 +333,8 @@ class  GCODEParser
      var lastRapidA = 0.0
      var lastRapidB = 0.0
      var lastRapidC = 0.0
+     var lastXYFeed = 0.0
+     var lastZFeed = 0.0
      var currentPositionX = 0.0
      var currentPositionY = 0.0
      var currentPositionZ = 0.0
@@ -280,6 +365,11 @@ class  GCODEParser
      var SegmentNumber = 0
      var SegmentNumberNext = 0
      var Annotate = false
+     var OptimizeRetracts = false
+     var OptimizeSegmentLocality = false
+     var SuppressRedundantMotionMode = false
+     var OptEnabled = true
+     
      
      
      var LastMovementWas = LastMovementWasEnum.None
@@ -310,12 +400,19 @@ class  GCODEParser
      var PreviousNode: GCODEParser?
      var OutputString: String = ""
      var Errors: String = ""
+     var UnitString: String = "  "
+     var InBlock: CmdsInBlock
+     var PBlock: String = ""
+     var NextStrings: Array <String> = []
+     var SourceBlock: String = ""
+     var ZFeedOverride: Double = 0
      
      // Constants
      let ReferencePlane = 0.0    // Z<=Referenceplane = last move inside this segment.
      
      init()
      {
+          InBlock = CmdsInBlock.init()
           
           X = 0.0 // x pos
           Y = 0.0 // y pos
@@ -324,14 +421,18 @@ class  GCODEParser
           B = 0.0 // b pos
           C = 0.0 // c pos
           F = 0.0 // feed rate
-          S = 0.0 // spindle rate
+          S = 0 // spindle rate
           R = 0.0 // Position of retract plane
           I = 0.0
           J = 0.0
           N = 0.0  // line number
-          T = 0.0  // tool number
+          T = 0  // tool number
           P = 0    // pause/dwell time
           L = 0    // Repeat block count
+          D = 0.0
+          H = 0.0
+          K = 0.0
+          Q = 0.0
           lastLinearX = 0.0
           lastLinearY = 0.0
           lastLinearZ = 0.0
@@ -344,6 +445,8 @@ class  GCODEParser
           lastRapidA = 0.0
           lastRapidB = 0.0
           lastRapidC = 0.0
+          lastXYFeed = 0.0
+          lastZFeed = 0.0
           currentPositionX = 0.0
           currentPositionY = 0.0
           currentPositionZ = 0.0
@@ -362,6 +465,7 @@ class  GCODEParser
           AxisOffsetValuesA = 0.0
           AxisOffsetValuesB = 0.0
           AxisOffsetValuesC = 0.0
+     
           
           LastMovementWas = LastMovementWasEnum.None
           MotionMode =  MotionModalGroup.None
@@ -383,6 +487,11 @@ class  GCODEParser
           FeedRateFound = false
           wordsProcessed = 0
           FatalError = .None
+          OptimizeRetracts = false
+          OptimizeSegmentLocality = false
+          SuppressRedundantMotionMode = false
+          OptEnabled = true
+          ZFeedOverride = 0
           
           SettingDwell = false
           Dwelling = false
@@ -401,6 +510,7 @@ class  GCODEParser
           TransitionedToNextLayer = false
           DeepestCutSoFar = +55555555555.0
           Annotate = false
+          SourceBlock = ""
           
           
      }
@@ -409,13 +519,16 @@ class  GCODEParser
      {
           
           self.init()
-          ParseGCodeBlock(Block)
+          SourceBlock = Block
+          ParseGCodeBlock(SourceBlock)
      }
-     
-     convenience init(last: GCODEParser , Block: String)
+
+     convenience init(last: GCODEParser , Block: String, opt: Bool)
      {
-          
           self.init()
+          OptEnabled = opt
+          
+          SourceBlock = Block
           PreviousNode = last
           AbsolutePositioningMode = last.AbsolutePositioningMode
           PathControlMode = last.PathControlMode
@@ -449,6 +562,10 @@ class  GCODEParser
           T = last.T
           P = last.P
           L = last.L
+          D = last.D
+          H = last.H
+          K = last.K
+          Q = last.Q
           lastLinearA = last.lastLinearA
           lastLinearB = last.lastLinearB
           lastLinearC = last.lastLinearA
@@ -461,6 +578,8 @@ class  GCODEParser
           lastRapidX = last.lastRapidX
           lastRapidY = last.lastRapidY
           lastRapidZ = last.lastRapidZ
+          lastXYFeed = last.lastXYFeed
+          lastZFeed = last.lastZFeed
           currentPositionA = last.currentPositionA
           currentPositionB = last.currentPositionB
           currentPositionC = last.currentPositionC
@@ -496,14 +615,131 @@ class  GCODEParser
           TransitionedToNextLayer = false
           DeepestCutSoFar = last.DeepestCutSoFar
           Annotate = last.Annotate
+          OptimizeRetracts = last.OptimizeRetracts
+          OptimizeSegmentLocality = last.OptimizeSegmentLocality
+          SuppressRedundantMotionMode = last.SuppressRedundantMotionMode
+          UnitString = last.UnitString
+          ZFeedOverride = last.ZFeedOverride
           
-          ParseGCodeBlock(Block)
+          NextStrings.removeAll()
+          
+          ParseGCodeBlock(SourceBlock)
+
+          
+     }
+
+     convenience init(last: GCODEParser , Block: String)
+     {
+          
+          self.init()
+          OptEnabled = true
+          SourceBlock = Block
+          PreviousNode = last
+          AbsolutePositioningMode = last.AbsolutePositioningMode
+          PathControlMode = last.PathControlMode
+          CoordinateSystemMode = last.CoordinateSystemMode
+          LastMovementWas = last.LastMovementWas
+          MotionMode = last.MotionMode
+          FeedOverrideMode = last.FeedOverrideMode
+          CoolantMode = last.CoolantMode
+          ToolChangeMode = last.ToolChangeMode
+          SpindleMode = last.SpindleMode
+          StoppingMode = last.StoppingMode
+          PlaneSelectionMode = last.PlaneSelectionMode
+          DistanceMode = last.DistanceMode
+          FeedRateMode = last.FeedRateMode
+          UnitMode = last.UnitMode
+          CutterRadiusCompensationMode = last.CutterRadiusCompensationMode
+          ToolLengthOffsetMode = last.ToolLengthOffsetMode
+          ReturnModeCannedCycleMode = last.ReturnModeCannedCycleMode
+          X = last.X
+          Y = last.Y
+          Z = last.Z
+          A = last.A
+          B = last.B
+          C = last.C
+          F = last.F
+          S = last.S
+          R = last.R
+          I = last.I
+          J = last.J
+          N = last.N
+          T = last.T
+          P = last.P
+          L = last.L
+          D = last.D
+          H = last.H
+          K = last.K
+          Q = last.Q
+          lastLinearA = last.lastLinearA
+          lastLinearB = last.lastLinearB
+          lastLinearC = last.lastLinearA
+          lastLinearX = last.lastLinearX
+          lastLinearY = last.lastLinearY
+          lastLinearZ = last.lastLinearZ
+          lastRapidA = last.lastRapidA
+          lastRapidB = last.lastRapidB
+          lastRapidC = last.lastRapidC
+          lastRapidX = last.lastRapidX
+          lastRapidY = last.lastRapidY
+          lastRapidZ = last.lastRapidZ
+          lastXYFeed = last.lastXYFeed
+          lastZFeed = last.lastZFeed
+          currentPositionA = last.currentPositionA
+          currentPositionB = last.currentPositionB
+          currentPositionC = last.currentPositionC
+          currentPositionX = last.currentPositionX
+          currentPositionY = last.currentPositionY
+          currentPositionZ = last.currentPositionZ
+          CoordinateSystemA = last.CoordinateSystemA
+          CoordinateSystemB = last.CoordinateSystemB
+          CoordinateSystemC = last.CoordinateSystemC
+          CoordinateSystemX = last.CoordinateSystemX
+          CoordinateSystemY = last.CoordinateSystemY
+          CoordinateSystemZ = last.CoordinateSystemZ
+          AxisOffsetValuesA = last.AxisOffsetValuesA
+          AxisOffsetValuesB = last.AxisOffsetValuesB
+          AxisOffsetValuesC = last.AxisOffsetValuesC
+          AxisOffsetValuesX = last.AxisOffsetValuesX
+          AxisOffsetValuesY = last.AxisOffsetValuesY
+          AxisOffsetValuesZ = last.AxisOffsetValuesZ
+          
+          SettingDwell = false
+          Dwelling = last.Dwelling
+          ParameterFileOffsetsBeingSet = false
+          ParameterFile = last.ParameterFile
+          NeedFeedRate = false
+          SettingCoordinateSystem = 0
+          FatalError = .None
+          BlockDeleteSwitch = last.BlockDeleteSwitch
+          AtOrAboveReference = false;
+          TransitionedAboveReferencePlane = false
+          SegmentNumber = last.SegmentNumberNext
+          Layer = last.NextLayer
+          NextLayer = Layer
+          TransitionedToNextLayer = false
+          DeepestCutSoFar = last.DeepestCutSoFar
+          Annotate = last.Annotate
+          OptimizeRetracts = last.OptimizeRetracts
+          OptimizeSegmentLocality = last.OptimizeSegmentLocality
+          SuppressRedundantMotionMode = last.SuppressRedundantMotionMode
+          UnitString = last.UnitString
+          ZFeedOverride = last.ZFeedOverride
+          
+          NextStrings.removeAll()
+          
+          ParseGCodeBlock(SourceBlock)
           
           
      }
      
+     func AddNext(value: String)
+     {
+          NextStrings.append(value)
+     }
+     
      // Set the state of the block delete switch
-     // If "true" sitch is on, and any block delete blocks will be skipped (/)
+     // If "true", switch is on, and any block delete blocks will be skipped (/)
      func BlockDeleteSwitch(state: Bool)
      {
           BlockDeleteSwitch = state
@@ -547,6 +783,7 @@ class  GCODEParser
      
      func GCode_P(value: Int) -> Bool
      {
+          InBlock.P = true
           if (SettingCoordinateSystem == -1)
           {
                P = value
@@ -563,14 +800,19 @@ class  GCODEParser
      }
      func GCode_Q(value: Double) -> Bool
      {
+          InBlock.Q = true
+          Q = value
           Errors = Errors + "Q \(value)\n"
           return true
      }
-     func GCode_T(value: Double) -> Bool  // Select Tool
+     func GCode_T(value: Int) -> Bool  // Select Tool
      {
+          InBlock.T = true
+          T = value
           if (T == value)
           {
                Errors = Errors + "Redundant Tool Selection (Tool \(T))\n"// Redundant tool selection
+               InBlock.T = false
                return false
           }
           else
@@ -583,6 +825,8 @@ class  GCODEParser
      {
           var retVal = true
           
+          InBlock.A = true
+          A = value
           if (SettingCoordinateSystem >= 1)
           {
                CoordinateSystemA[P] = value;
@@ -631,6 +875,8 @@ class  GCODEParser
      {
           var retVal = true
           
+          InBlock.B = true
+          B = value
           if (SettingCoordinateSystem >= 1)
           {
                CoordinateSystemB[P] = value;
@@ -682,6 +928,8 @@ class  GCODEParser
      {
           var retVal = true
           
+          InBlock.C = true
+          C = value
           if (SettingCoordinateSystem >= 1)
           {
                CoordinateSystemC[P] = value;
@@ -727,30 +975,40 @@ class  GCODEParser
      }
      func GCode_D(value: Double) -> Bool
      {
+          InBlock.D = true
+          D = value
           Errors = Errors + "D \(value)\n"
           return true
           
      }
      func GCode_H(value: Double) -> Bool
      {
+          InBlock.H = true
+          H = value
           Errors = Errors + "H \(value)\n"
           return true
           
      }
      func GCode_I(value: Double) -> Bool
      {
+          InBlock.I = true
+          I = value
           Errors = Errors + "I \(value)\n"
           return true
           
      }
      func GCode_J(value: Double) -> Bool
      {
+          InBlock.J = true
+          J = value
           Errors = Errors + "J \(value)\n"
           return true
           
      }
      func GCode_K(value: Double) -> Bool
      {
+          InBlock.K = true
+          K = value
           Errors = Errors + "K \(value)\n"
           return true
           
@@ -766,6 +1024,9 @@ class  GCODEParser
      {
           var retVal: Bool = true
           
+          InBlock.AddG(value)
+     
+          
           switch (value)
           {
           case 0:
@@ -775,8 +1036,11 @@ class  GCODEParser
                }
                else
                {
-                    Errors = Errors + "Motion Mode G0 already set\n"
-                    retVal = false
+                    if (SuppressRedundantMotionMode)
+                    {
+                         retVal = false
+                         InBlock.G.removeLast()
+                    }
                     
                }
                break
@@ -787,8 +1051,11 @@ class  GCODEParser
                }
                else
                {
-                    Errors = Errors + "Motion Mode G1 already set\n "
-                    retVal = false
+                    if (SuppressRedundantMotionMode)
+                    {
+                         retVal = false
+                         InBlock.G.removeLast()
+                    }
                     
                }
                if (FeedRateMode == .G93)
@@ -899,9 +1166,11 @@ class  GCODEParser
                
           case 20:
                UnitMode = .G20
+               UnitString = "inch"
                break
           case 21:
                UnitMode = .G21
+               UnitString = "mm"
                break
                
           case 40:
@@ -1004,6 +1273,7 @@ class  GCODEParser
                GCode_B(ParameterFile[5185])
                GCode_C(ParameterFile[5186])
                break
+               
           case 92: // Set offsets
                ParameterFileOffsetsBeingSet = true
                
@@ -1057,6 +1327,7 @@ class  GCODEParser
      
      func GCode_Mx(value: Double) -> Bool
      {
+          InBlock.AddM(value)
           switch (value)
           {
           case 0:
@@ -1077,6 +1348,7 @@ class  GCODEParser
                CoolantMode = .M9
                CoordinateSystemMode = .G54
                GCode_Gx(92.2)
+               InBlock.G.removeLast()  // Wow. Hack.
                break
           case 30:
                StoppingMode = .M30
@@ -1090,6 +1362,8 @@ class  GCODEParser
                CoolantMode = .M9
                CoordinateSystemMode = .G54
                GCode_Gx(92.2)
+               InBlock.G.removeLast() // Wow. Hack.
+               
                break
           case 60:
                StoppingMode = .M60
@@ -1113,21 +1387,21 @@ class  GCODEParser
           case 7: // coolant on
                if (CoolantMode == .M8)
                {
-                    CoolantMode = .M7andM8
+                    CoolantMode = .M7andM8   // coolant and mist can both be on at the same time.
                }
                else
                {
-                    CoolantMode = .M7
+                    CoolantMode = .M7       // turn on coolant
                }
                
           case 8:// mist on
                if (CoolantMode == .M7)
                {
-                    CoolantMode = .M7andM8
+                    CoolantMode = .M7andM8  // coolant and mist can both be on at the same time.
                }
                else
                {
-                    CoolantMode = .M8
+                    CoolantMode = .M8       // turn on mist
                }
                
           case 9: // coolant off
@@ -1151,10 +1425,11 @@ class  GCODEParser
           
      }
      
-     // I think this is a repeat line word, need to confirm
+     // I think this is a repeat block word, need to confirm
      func GCode_L(value: Int) -> Bool
      {
           L = value
+          InBlock.L = true
           Errors = Errors + "L \(value)\n"
           return true
           
@@ -1162,27 +1437,33 @@ class  GCODEParser
      func GCode_N(value: Double) -> Bool  // Line number
      {
           N = value
+          InBlock.N = true
           return true
           
      }
      func GCode_F(value: Double) -> Bool   // Feed rate. No impact on rapid motion.
      {
           F = value
+          InBlock.F = true
           FeedRateFound = true;
           return true
           
      }
      func GCode_R(value: Double) -> Bool
      {
+          InBlock.R = true
+          R = value
           Errors = Errors + "R \(value)\n"
           return true
           
      }
-     func GCode_S(value: Double) -> Bool  // Spindle speed
+     func GCode_S(value: Int) -> Bool  // Spindle speed
      {
+          InBlock.S = true
           if (value < 0)
           {
                Errors = Errors + "Attempt to set the spindle speed less than zero. Not set.\n"
+               InBlock.S = false
                return false;
           }
           S = value
@@ -1200,6 +1481,9 @@ class  GCODEParser
      {
           var retVal: Bool = true;
           
+          InBlock.X = true
+          X = value
+          
           if (SettingCoordinateSystem >= 1)
           {
                CoordinateSystemX[P] = value;
@@ -1216,13 +1500,14 @@ class  GCODEParser
           {
           case MotionModalGroup.G0 : // Rapid
                
-               if (value == currentPositionX)
-               {
-                    // Here's a move that didn't need to happen.
-               }
                lastRapidX = value
                if (AbsolutePositioningMode)
                {
+                    if ((value == currentPositionX) && OptEnabled)
+                    {
+                         retVal = false // Here's a move that didn't need to happen, already there.
+                         InBlock.X = false
+                    }
                     currentPositionX = value
                }
                else{
@@ -1231,14 +1516,21 @@ class  GCODEParser
                
                break
           case MotionModalGroup.G1 : // Linear
+               
                lastLinearX = value
                if (AbsolutePositioningMode)
                {
+                    if ((value == currentPositionX) && OptEnabled)
+                    {
+                         retVal = false // Here's a move that didn't need to happen, already there.
+                         InBlock.X = false
+                    }
                     currentPositionX = value
                }
                else{
                     currentPositionX = currentPositionX + value;
                }
+               lastXYFeed = F;
                break
                
           default:
@@ -1261,7 +1553,10 @@ class  GCODEParser
      ///////////////////////////////////////////////////////
      func GCode_Y(value: Double) -> Bool
      {
-          var retVal: Bool = true;
+          var retVal: Bool = true
+          
+          InBlock.Y = true
+          Y = value
           
           if (SettingCoordinateSystem >= 1)
           {
@@ -1281,6 +1576,12 @@ class  GCODEParser
                lastRapidY = value
                if (AbsolutePositioningMode)
                {
+                    if ((value == currentPositionY) && OptEnabled)
+                    {
+                         retVal = false // Here's a move that didn't need to happen, already there.
+                         InBlock.Y = false
+                    }
+
                     currentPositionY = value
                }
                else{
@@ -1292,11 +1593,18 @@ class  GCODEParser
                lastLinearY = value
                if (AbsolutePositioningMode)
                {
+                    if ((value == currentPositionY) && OptEnabled)
+                    {
+                         retVal = false // Here's a move that didn't need to happen, already there.
+                         InBlock.Y = false
+                    }
+                    
                     currentPositionY = value
                }
                else{
                     currentPositionY = currentPositionY + value;
                }
+               lastXYFeed = F;
                break
                
           default:
@@ -1322,6 +1630,9 @@ class  GCODEParser
      {
           var retVal: Bool = true;
           var lastPositionZ = 0.0
+          Z = value
+          
+          InBlock.Z = true
           
           if (SettingCoordinateSystem >= 1)
           {
@@ -1343,11 +1654,17 @@ class  GCODEParser
                lastRapidZ = value
                if (AbsolutePositioningMode)
                {
+                    if ((value == currentPositionZ) && OptEnabled)
+                    {
+                         retVal = false // Here's a move that didn't need to happen, already there.
+                         InBlock.Z = false
+                    }
                     currentPositionZ = value
                }
                else{
                     currentPositionZ = currentPositionZ + value;
                }
+               
                if (currentPositionZ >= ReferencePlane) && ( lastPositionZ < ReferencePlane)
                {
                     TransitionedAboveReferencePlane = true
@@ -1364,25 +1681,87 @@ class  GCODEParser
           case MotionModalGroup.G1 : // Linear
                lastPositionZ = currentPositionZ
                lastLinearZ = value
+               lastZFeed = F
+             
+               
+
+//               if (OptimizeRetracts && OptEnabled)
+//               {
+//                    if (AbsolutePositioningMode)
+//                    {
+//                         var Gap: Double = 0.0
+//
+//                         if (UnitMode == .G20) // inches
+//                         {
+//                              Gap = ZPlungeGapInch
+//                              if (lastZFeed == 0) { lastZFeed = 2 }
+//                         }
+//                         else  // mm
+//                         {
+//                              Gap = ZPlungeGapMM
+//                              if (lastZFeed == 0) { lastZFeed = 100 }
+//                         }
+//
+//                         if (ZFeedOverride != 0)
+//                         {
+//                              lastZFeed = ZFeedOverride
+//                         }
+//                         
+//                                                  if (OptEnabled)
+//                         {
+//                              if (currentPositionZ > ReferencePlane) { print(">>>C \(currentPositionZ) > \(ReferencePlane) -> \(value)") } else { print(">>>C \(currentPositionZ) <= \(ReferencePlane) -> \(value)")}
+//                              if (value <= DeepestCutSoFar) { print(">>>V \(value) <= \(DeepestCutSoFar)") } else { print(">>>V \(value) > \(DeepestCutSoFar)")}
+//                         }
+//                         
+//                         if ((currentPositionZ > ReferencePlane) && (value <= DeepestCutSoFar))  // if we are above part zero, and going to at least as deep as deepest cut
+//                         {
+//                              
+//                              InBlock.DebugFlag = true
+//                              print("DidOpt")
+//                              //
+//                              if (currentPositionZ >= ReferencePlane)
+//                              {
+//                                   AddNext("G0 Z\(DeepestCutSoFar+Gap)")
+//                              }
+//                              
+//                              AddNext("G1 F\(lastZFeed)")
+//                              AddNext("G1 Z\(value)")
+//                              retVal = false
+//                              InBlock.Z = false
+//                              currentPositionZ = value
+//                              return retVal
+//                         }
+//                    }
+//               }
+               
+//               
+//               if (currentPositionZ >= ReferencePlane) && ( lastPositionZ < ReferencePlane)
+//               {
+//                    TransitionedAboveReferencePlane = true
+//               }
+//               
+               
                if (AbsolutePositioningMode)
                {
+                    if ((value == currentPositionZ) && (OptEnabled))
+                    {
+                         retVal = false // Here's a move that didn't need to happen, already there.
+                         InBlock.Z = false
+                         return retVal
+                    }
                     currentPositionZ = value
                }
-               else{
+               else
+               {
                     currentPositionZ = currentPositionZ + value;
                }
-               if (currentPositionZ >= ReferencePlane) && ( lastPositionZ < ReferencePlane)
-               {
-                    TransitionedAboveReferencePlane = true
-               }
+
                if (currentPositionZ < DeepestCutSoFar)  // Are we cutting a new layer?
                {
                     DeepestCutSoFar = currentPositionZ
-                    Layer = Layer + 1
-                    NextLayer = Layer
+                    NextLayer = Layer + 1
                }
-               
-               
+
                break
                
           default:
@@ -1428,9 +1807,10 @@ class  GCODEParser
           
           var workingBlock: String = BlockToParse
           
+          
           workingBlock = workingBlock.capitalizedString   // convert any lower case to upper
           
-          // There may be more than one space between words, so take them all out, they're eas(ish) to put back in.
+          // There may be more than one space between words, so take them all out, they're easy(ish) to put back in.
           // If we leave the multiples in, the tokenizer will split the spaces into "empty" tokens, which is
           // less than desirable. At the same time, there might be spaces missing between words, so we have to put
           // them in anyway.
@@ -1438,7 +1818,7 @@ class  GCODEParser
           
           // Per ansi standard, none of the spaces are required, and are ignored if present,
           // so this if a simple way of normalizing the whole thing. This isn't particularly efficient, but it's simple.
-          // In the course of doing this, we're doing to run through all the text 26 times.  Yuck.
+          // In the course of doing this, we're going to run through all the text 26 times.  Yuck.
           
           for ch in allletters.characters
           {
@@ -1460,11 +1840,13 @@ class  GCODEParser
                if (isCommentBlock) // If we've entered a comment block, dump the rest of the words in the block
                {
                     OutputString = OutputString +  word + " "
+                    InBlock.Comment.append("\(word) ")
+
                }
                else
                {
                     
-                    if !word.isEmpty  // In case something went goofy and we got an empty token
+                    if !word.isEmpty  // In case something went goofy and we got an empty token, skip parse.
                     {
                          let ch : Character = word.characters.first!
                          wordsProcessed = wordsProcessed + 1;
@@ -1490,7 +1872,7 @@ class  GCODEParser
                               if GCode_R(ExtractDoubleValue(word)) { OutputString = OutputString  + word + " "}
                               break
                          case "S":  // Almost always spindle speed
-                              if GCode_S(ExtractDoubleValue(word)) { OutputString = OutputString  + word + " "}
+                              if GCode_S(ExtractIntValue(word)) { OutputString = OutputString  + word + " "}
                               break
                          case "X":  // almost always X position
                               if GCode_X(ExtractDoubleValue(word)) { OutputString = OutputString  + word + " "}
@@ -1529,7 +1911,7 @@ class  GCODEParser
                               if GCode_Q(ExtractDoubleValue(word)) { OutputString = OutputString + word + " "}
                               break
                          case "T":  // Tool to select with next tool change
-                              if GCode_T(ExtractDoubleValue(word)) { OutputString = OutputString  + word + " "}
+                              if GCode_T(ExtractIntValue(word)) { OutputString = OutputString  + word + " "}
                               break
                          case "%":    // Start or end of file
                               OutputString = OutputString  + word + " "
@@ -1537,6 +1919,7 @@ class  GCODEParser
                          case "(":   // Comment. Should dump everything from here to end of line
                               isCommentBlock = true
                               OutputString = OutputString + " " + word
+                              InBlock.Comment.append("\(word)")
                               break
                          case "/":   // Line has block delete flag.
                               if (BlockDeleteSwitch)  // If block delete switch on, ignore the line
@@ -1586,8 +1969,116 @@ class  GCODEParser
           
           if (Annotate)
           {
-               OutputString = "Seg:\(SegmentNumber) dZ=\(DeepestCutSoFar) Lyr=\(Layer) | " + OutputString
+               OutputString = OutputString + "  (------------------Seg:\(SegmentNumber) dZ=\(DeepestCutSoFar) Lyr=\(Layer) )"
           }
+          
+          // lets try and regenerate the block
+          //
+          for token in InBlock.M
+          {
+               PBlock = PBlock + String.localizedStringWithFormat("M%G ", token)
+          }
+          for token in InBlock.G
+          {
+               PBlock = PBlock + String.localizedStringWithFormat("G%G ", token)
+          }
+          if (InBlock.F)
+          {
+               PBlock = PBlock + "F\(F)"
+          }
+          if (InBlock.A)
+          {
+               PBlock = PBlock + String.localizedStringWithFormat("A%.3f ", A)
+          }
+          if (InBlock.B)
+          {
+               PBlock = PBlock + String.localizedStringWithFormat("B%.3f ", B)
+          }
+          if (InBlock.C)
+          {
+               PBlock = PBlock + String.localizedStringWithFormat("C%.3f ", C)
+          }
+          if (InBlock.D)
+          {
+               PBlock = PBlock + "D\(D)"
+          }
+          if (InBlock.H)
+          {
+               PBlock = PBlock + "H\(H)"
+          }
+          if (InBlock.I)
+          {
+               PBlock = PBlock + "I\(I)"
+          }
+          if (InBlock.J)
+          {
+               PBlock = PBlock + "J\(J)"
+          }
+          if (InBlock.K)
+          {
+               PBlock = PBlock + "K\(K)"
+          }
+          if (InBlock.L)
+          {
+               PBlock = PBlock + "L\(L)"
+          }
+          if (InBlock.N)
+          {
+               PBlock = PBlock + "N\(N)"
+          }
+          if (InBlock.P)
+          {
+               PBlock = PBlock + "P\(P)"
+          }
+          if (InBlock.Q)
+          {
+               PBlock = PBlock + "Q\(Q)"
+          }
+          if (InBlock.R)
+          {
+               PBlock = PBlock + "R\(R)"
+          }
+          if (InBlock.S)
+          {
+               PBlock = PBlock + "S\(S)"
+          }
+          if (InBlock.T)
+          {
+               PBlock = PBlock + "T\(T)"
+          }
+          if (InBlock.X)
+          {
+               PBlock = PBlock + String.localizedStringWithFormat("X%.3f ", X)
+          }
+          if (InBlock.Y)
+          {
+               PBlock = PBlock + String.localizedStringWithFormat("Y%.3f ", Y)
+          }
+          if (InBlock.Z)
+          {
+               PBlock = PBlock + String.localizedStringWithFormat("Z%.3f ", Z)
+          }
+/*          if (InBlock.F)
+          {
+               PBlock = PBlock + "F\(F)"
+          }
+*/
+          if (!InBlock.Comment.isEmpty)
+          {
+               var commentstring = ""     // Not sure what to really do with this. come back to it later.
+               for cstring in InBlock.Comment
+               {
+                    commentstring = commentstring + cstring
+               }
+               PBlock = PBlock + commentstring
+               
+          }
+          
+          if (InBlock.DebugFlag)
+          {
+               PBlock = PBlock + "<-----------------" + InBlock.DebugString
+          }
+          
           
      }
      
@@ -1595,33 +2086,4 @@ class  GCODEParser
 }
 
 
-func OpenFileAndProcess(file: String)
-{
-     
-     var encoded: UInt = 0
-     var text2: String
-     var lines: Array<String>
-     var program = Dictionary<String,GCODEParser>()
-     var lastone: GCODEParser
-     var count = 0
-     
-     
-     
-     do{
-          text2 = try String.init(contentsOfFile: file, usedEncoding: &encoded)
-          lines = text2.componentsSeparatedByString("\n")
-          program.updateValue(GCODEParser.init(), forKey: "0")
-          
-          for word in lines
-          {
-               count = count + 1
-               program.updateValue(GCODEParser.init(last: program["\(count-1)"]!, Block: word), forKey: "\(count)")
-          }
-     } catch {(print("bad"))}
-     
-     lastone = program["\(count-1)"]!
-     
-     
-     
-}
 
