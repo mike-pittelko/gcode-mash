@@ -7,7 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D77C84781D2334D800E493D3 /* Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = D77C84771D2334D800E493D3 /* Utilities.swift */; };
 		D7EBB47B1D1B6070006D234F /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EBB47A1D1B6070006D234F /* main.swift */; };
+		D7EBB4821D1B6089006D234F /* gcode-parse.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EBB4811D1B6089006D234F /* gcode-parse.swift */; };
+		D7EBB48D1D1F6EA9006D234F /* StringExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EBB48C1D1F6EA9006D234F /* StringExtensions.swift */; };
+		D7EBB48F1D1F6EB6006D234F /* Option.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EBB48E1D1F6EB6006D234F /* Option.swift */; };
+		D7EBB4911D1F6EC2006D234F /* CommandLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EBB4901D1F6EC2006D234F /* CommandLine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -23,8 +28,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D77C84771D2334D800E493D3 /* Utilities.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Utilities.swift; sourceTree = "<group>"; };
 		D7EBB4771D1B6070006D234F /* gcode-mash */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "gcode-mash"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D7EBB47A1D1B6070006D234F /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		D7EBB4811D1B6089006D234F /* gcode-parse.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = "gcode-parse.swift"; sourceTree = "<group>"; };
+		D7EBB48C1D1F6EA9006D234F /* StringExtensions.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = StringExtensions.swift; path = "CommandLine-master/CommandLine/StringExtensions.swift"; sourceTree = SOURCE_ROOT; };
+		D7EBB48E1D1F6EB6006D234F /* Option.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = Option.swift; path = "CommandLine-master/CommandLine/Option.swift"; sourceTree = SOURCE_ROOT; };
+		D7EBB4901D1F6EC2006D234F /* CommandLine.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = CommandLine.swift; path = "CommandLine-master/CommandLine/CommandLine.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,7 +67,12 @@
 		D7EBB4791D1B6070006D234F /* gcode-mash */ = {
 			isa = PBXGroup;
 			children = (
+				D7EBB4901D1F6EC2006D234F /* CommandLine.swift */,
+				D7EBB48E1D1F6EB6006D234F /* Option.swift */,
+				D7EBB48C1D1F6EA9006D234F /* StringExtensions.swift */,
 				D7EBB47A1D1B6070006D234F /* main.swift */,
+				D7EBB4811D1B6089006D234F /* gcode-parse.swift */,
+				D77C84771D2334D800E493D3 /* Utilities.swift */,
 			);
 			path = "gcode-mash";
 			sourceTree = "<group>";
@@ -119,6 +134,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D77C84781D2334D800E493D3 /* Utilities.swift in Sources */,
+				D7EBB4911D1F6EC2006D234F /* CommandLine.swift in Sources */,
+				D7EBB48F1D1F6EB6006D234F /* Option.swift in Sources */,
+				D7EBB48D1D1F6EA9006D234F /* StringExtensions.swift in Sources */,
+				D7EBB4821D1B6089006D234F /* gcode-parse.swift in Sources */,
 				D7EBB47B1D1B6070006D234F /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -211,6 +231,8 @@
 		D7EBB47F1D1B6070006D234F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_64_BIT)";
+				"FRAMEWORK_SEARCH_PATHS[arch=*]" = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -218,6 +240,8 @@
 		D7EBB4801D1B6070006D234F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_64_BIT)";
+				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
@@ -241,6 +265,7 @@
 				D7EBB4801D1B6070006D234F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
